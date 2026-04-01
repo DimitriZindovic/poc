@@ -16,11 +16,27 @@ class ShippingListItem extends Model
         'status',
         'skip_reason',
         'shipping_snapshot',
+        'shipping_method',
+        'tracking_number',
+        'shipped_status',
     ];
 
     protected $casts = [
         'shipping_snapshot' => 'array',
     ];
+
+    // Statuts d'expédition possibles
+    public static function STATUSES(): array
+    {
+        return [
+            'pending' => 'En attente',
+            'packed' => 'Emballée',
+            'shipped' => 'Expédiée',
+            'in_transit' => 'En transit',
+            'delivered' => 'Livrée',
+            'failed' => 'Retour/Échec',
+        ];
+    }
 
     public function shippingList()
     {

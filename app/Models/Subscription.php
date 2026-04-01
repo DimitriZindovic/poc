@@ -17,6 +17,8 @@ class Subscription extends Model
         'total_boxes',
         'shipped_boxes',
         'status',
+        'shipping_method',
+        'shipping_notes',
         'shipping_address',
         'next_shipment_at',
         'last_checked_at',
@@ -27,6 +29,17 @@ class Subscription extends Model
         'next_shipment_at' => 'date',
         'last_checked_at' => 'datetime',
     ];
+
+    // Types d'expédition supportés
+    public static function SHIPPING_METHODS(): array
+    {
+        return [
+            'standard' => 'Expédition standard (7-10 jours)',
+            'express' => 'Expédition express (2-3 jours)',
+            'priority' => 'Expédition prioritaire (1-2 jours)',
+            'international' => 'Expédition internationale (10-20 jours)',
+        ];
+    }
 
     public function order()
     {
