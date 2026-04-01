@@ -14,10 +14,10 @@ class ShopifyService
 
     public function __construct()
     {
-        $this->shopifyUrl = env('SHOPIFY_API_URL');
-        $this->apiKey = env('SHOPIFY_API_KEY');
-        $this->apiPassword = env('SHOPIFY_API_PASSWORD');
-        $this->apiVersion = env('SHOPIFY_API_VERSION', '2025-04');
+        $this->shopifyUrl = (string) config('services.shopify.api_url');
+        $this->apiKey = (string) config('services.shopify.api_key');
+        $this->apiPassword = (string) config('services.shopify.api_password');
+        $this->apiVersion = (string) config('services.shopify.api_version', '2025-04');
     }
 
     public function createProduct($name, $price)
@@ -61,5 +61,70 @@ class ShopifyService
         ]);
 
         return $responseData;
+    }
+
+    public function listProducts(): array
+    {
+        $url = "{$this->shopifyUrl}/admin/api/{$this->apiVersion}/products.json?limit=50";
+
+        $response = Http::withBasicAuth($this->apiKey, $this->apiPassword)->get($url);
+
+        if (!$response->successful()) {
+            throw new \RuntimeException('Failed to fetch Shopify products: ' . $response->body());
+        }
+
+        return $response->json('products', []);
+    }
+
+    public function createTestOrder(int|string $variantId, string $email): array
+    {
+        $url = "{$this->shopifyUrl}/admin/api/{$this->apiVersion}/orders.json";
+
+        $payload = [
+            'order' => [
+                'email' => $email,
+                'line_items' => [
+                    [
+                        'variant_id' => (int) $variantId,
+                        'quantity' => 1,
+                    ],
+                ],
+                'financial_status' => 'paid',
+                'test' => true,
+                'send_receipt' => false,
+                'send_fulfillment_receipt' => false,
+            ],
+        ];
+
+        $response = Http::withBasicAuth($this->apiKey, $this->apiPassword)->post($url, $payload);
+
+        if (!$response->successful()) {
+            throw new \RuntimeException('Failed to create test order in Shopify: ' . $response->body());
+        }
+
+        return $response->json('order', []);
+    }
+
+    public function buildStorefrontCheckoutUrl(int $variantId, string $email): string
+    {
+        $base = rtrim($this->shopifyUrl, '/');
+        $query = http_build_query([
+            'checkout[email]' => $email,
+        ]);
+
+        return $base . '/cart/' . $variantId . ':1?' . $query;
+    }
+
+    public function getAccessScopes(): array
+    {
+        $url = "{$this->shopifyUrl}/admin/oauth/access_scopes.json";
+
+        $response = Http::withBasicAuth($this->apiKey, $this->apiPassword)->get($url);
+
+        if (!$response->successful()) {
+            throw new \RuntimeException('Failed to fetch Shopify access scopes: ' . $response->body());
+        }
+
+        return $response->json('access_scopes', []);
     }
 }

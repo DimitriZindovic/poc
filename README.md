@@ -1,66 +1,138 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Shopify Test MVP - Abonnement 6 Boxes + Supabase
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Ce projet est un MVP Laravel pour valider le flux complet:
 
-## About Laravel
+1. commande Shopify de test (produit abonnement),
+2. ingestion de la commande,
+3. creation d'un abonnement en base,
+4. generation manuelle d'une liste d'expedition (cron lance au terminal).
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+## Architecture
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+- Shopify (store partenaire de test): source des commandes.
+- Laravel: logique metier, webhook, simulation de commande, cron manuel.
+- Supabase Postgres: base de donnees metier.
+- Front de test: page unique pour piloter le MVP.
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+Le front appelle les APIs Laravel. Laravel appelle Shopify, puis persiste dans Supabase.
 
-## Learning Laravel
+## Endpoints exposes
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+- `GET /` : front de test.
+- `GET /api/shopify/products` : liste des produits Shopify.
+- `POST /api/shopify/simulate-order` : cree une commande Shopify test (paid) et cree les abonnements.
+- `POST /api/shopify/webhooks/orders-paid` : webhook Shopify orders/paid.
+- `GET /api/shipping-lists/latest` : derniere liste d'expedition generee.
 
-You may also try the [Laravel Bootcamp](https://bootcamp.laravel.com), where you will be guided through building a modern Laravel application from scratch.
+## Commande CRON (manuelle)
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+```bash
+php artisan app:generate-shipping-list
+```
 
-## Laravel Sponsors
+Mode simulation sans ecriture:
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+```bash
+php artisan app:generate-shipping-list --dry-run
+```
 
-### Premium Partners
+## 1) Setup Supabase
 
-- **[Vehikl](https://vehikl.com/)**
-- **[Tighten Co.](https://tighten.co)**
-- **[WebReinvent](https://webreinvent.com/)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel/)**
-- **[Cyber-Duck](https://cyber-duck.co.uk)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Jump24](https://jump24.co.uk)**
-- **[Redberry](https://redberry.international/laravel/)**
-- **[Active Logic](https://activelogic.com)**
-- **[byte5](https://byte5.de)**
-- **[OP.GG](https://op.gg)**
+### SQL a executer
 
-## Contributing
+Executer le script:
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+- [database/supabase/schema.sql](database/supabase/schema.sql)
 
-## Code of Conduct
+dans SQL Editor Supabase.
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+### Variables d'environnement Laravel
 
-## Security Vulnerabilities
+Dans [.env](.env), definir:
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+- `DB_CONNECTION=pgsql`
+- `DB_HOST` (host Supabase, idealement pooler)
+- `DB_PORT` (`6543` avec pooler ou `5432` direct)
+- `DB_DATABASE`
+- `DB_USERNAME`
+- `DB_PASSWORD`
 
-## License
+Puis vider le cache config:
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+```bash
+php artisan config:clear
+```
+
+## 2) Setup Shopify Partner (store de test)
+
+### A. Creer le produit abonnement
+
+Dans Shopify Admin (store test):
+
+1. Creer un produit `Abonnement 6 boxes`.
+2. S'assurer qu'il a au moins une variante publiee.
+3. Recuperer le `Variant ID` (utile pour la simulation).
+
+### B. Creer une app custom dans le store
+
+1. `Settings > Apps and sales channels > Develop apps`.
+2. Creer une app custom.
+3. Activer scopes Admin API minimum:
+    - `read_products`
+    - `write_orders`
+    - `read_orders`
+4. Installer l'app.
+5. Copier le token Admin API et le mettre dans `.env`:
+    - `SHOPIFY_API_PASSWORD`
+    - `SHOPIFY_API_KEY` (optionnel ici)
+    - `SHOPIFY_API_URL` (`https://<store>.myshopify.com`)
+    - `SHOPIFY_API_VERSION`
+
+### C. Webhook orders/paid
+
+1. Dans l'app custom: ajouter webhook topic `orders/paid`.
+2. URL webhook:
+    - `https://<ton-domaine>/api/shopify/webhooks/orders-paid`
+3. Copier le secret de signature webhook vers `.env`:
+    - `SHOPIFY_WEBHOOK`
+
+Pour un test local, utiliser un tunnel (`ngrok` ou cloudflared) vers Laravel.
+
+## 3) Demarrage local
+
+```bash
+composer install
+npm install
+php artisan serve
+npm run dev
+```
+
+Ouvrir:
+
+- `http://localhost:8000/`
+
+## 4) Scenario de test complet
+
+1. Ouvrir `GET /`.
+2. Cliquer `Charger les produits`.
+3. Prendre un `Variant ID` du produit abonnement.
+4. Remplir email + variant puis `Simuler commande`.
+5. Lancer le cron manuel:
+
+```bash
+php artisan app:generate-shipping-list
+```
+
+1. Cliquer `Charger la derniere liste` pour verifier les items d'expedition.
+
+## Notes metier MVP
+
+- Un line item est considere abonnement si le titre contient `abonnement` ou `box`.
+- Une souscription est creee avec `total_boxes = 6`.
+- Le cron genere 1 item d'expedition par souscription eligible.
+
+- Verifications faites avant generation:
+
+1. adresse complete (`address1`, `city`, `zip`, `country`)
+2. statut actif
+3. pas deja complete (`shipped_boxes < total_boxes`)
