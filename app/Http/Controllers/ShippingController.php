@@ -9,6 +9,7 @@ use App\Models\Subscription;
 use App\Services\ShopifyService;
 use App\Services\SubscriptionWorkflowService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Log;
 
 class ShippingController extends Controller
@@ -218,6 +219,11 @@ class ShippingController extends Controller
             ->orderByDesc('created_at')
             ->get()
             ->map(function ($sub) {
+                $order = $sub->order;
+                $rawPayload = is_array($order?->raw_payload) ? $order->raw_payload : [];
+                $lineItems = Arr::get($rawPayload, 'line_items', []);
+                $firstLineItem = is_array($lineItems) && !empty($lineItems) ? $lineItems[0] : [];
+
                 return [
                     'id' => $sub->id,
                     'email' => $sub->email,
@@ -232,6 +238,18 @@ class ShippingController extends Controller
                     'is_due' => optional($sub->next_shipment_at)->lte(now()),
                     'created_at' => $sub->created_at,
                     'shipping_address' => $sub->shipping_address,
+                    'order' => [
+                        'id' => $order?->id,
+                        'shopify_order_id' => $order?->shopify_order_id,
+                        'customer_name' => $order?->customer_name,
+                        'financial_status' => $order?->financial_status,
+                        'total_price' => Arr::get($rawPayload, 'total_price', Arr::get($firstLineItem, 'price')),
+                        'currency' => Arr::get($rawPayload, 'currency', Arr::get($rawPayload, 'presentment_currency')),
+                        'line_item_title' => Arr::get($firstLineItem, 'title'),
+                        'line_item_quantity' => Arr::get($firstLineItem, 'quantity'),
+                        'created_at' => $order?->created_at?->toIso8601String(),
+                        'shipping_address' => $order?->shipping_address ?? $sub->shipping_address,
+                    ],
                 ];
             });
 
@@ -250,8 +268,13 @@ class ShippingController extends Controller
             ->latest('id')
             ->first();
 
-        $items = ShippingListItem::query()
-            ->with('subscription')
+        $itemsQuery = ShippingListItem::query()->with('subscription');
+
+        if ($latest) {
+            $itemsQuery->where('shipping_list_id', $latest->id);
+        }
+
+        $items = $itemsQuery
             ->latest('id')
             ->limit(100)
             ->get();

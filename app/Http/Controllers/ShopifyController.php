@@ -7,6 +7,7 @@ use App\Models\Subscription;
 use App\Services\ShopifyService;
 use App\Services\SubscriptionWorkflowService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Log;
 
 class ShopifyController extends Controller
@@ -47,6 +48,59 @@ class ShopifyController extends Controller
 
             return response()->json([
                 'error' => 'Impossible de verifier les scopes Shopify',
+                'details' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function orders()
+    {
+        try {
+            $shopifyOrders = $this->shopifyService->listOrders();
+            $subscriptionGroups = Subscription::with('order')
+                ->get()
+                ->groupBy(fn(Subscription $subscription) => (string) $subscription->shopify_order_ref_id);
+
+            $orders = collect($shopifyOrders)
+                ->map(function (array $order) use ($subscriptionGroups) {
+                    $lineItems = Arr::get($order, 'line_items', []);
+                    $firstLineItem = is_array($lineItems) && !empty($lineItems) ? $lineItems[0] : [];
+                    $shippingAddress = Arr::get($order, 'shipping_address');
+                    $orderId = (string) Arr::get($order, 'id', '');
+                    $localSubscriptions = $subscriptionGroups->get($orderId, collect());
+
+                    return [
+                        'shopify_order_id' => $orderId,
+                        'email' => Arr::get($order, 'email'),
+                        'customer_name' => trim((string) (Arr::get($order, 'customer.first_name', '') . ' ' . Arr::get($order, 'customer.last_name', ''))),
+                        'financial_status' => Arr::get($order, 'financial_status', 'paid'),
+                        'total_price' => Arr::get($order, 'total_price', Arr::get($firstLineItem, 'price')),
+                        'currency' => Arr::get($order, 'currency', Arr::get($order, 'presentment_currency', 'EUR')),
+                        'line_item_title' => Arr::get($firstLineItem, 'title'),
+                        'line_item_quantity' => Arr::get($firstLineItem, 'quantity', 1),
+                        'shipping_address' => $shippingAddress,
+                        'created_at' => Arr::get($order, 'created_at'),
+                        'subscription_count' => $localSubscriptions->count(),
+                        'shipping_method' => optional($localSubscriptions->first())->shipping_method,
+                        'local_status' => optional($localSubscriptions->first())->status,
+                        'shipped_boxes' => (int) $localSubscriptions->sum('shipped_boxes'),
+                        'total_boxes' => (int) $localSubscriptions->sum('total_boxes'),
+                        'next_shipment_at' => optional($localSubscriptions->first())->next_shipment_at?->toIso8601String(),
+                        'order_status_url' => Arr::get($order, 'order_status_url'),
+                    ];
+                })
+                ->sortByDesc(fn(array $order) => $order['created_at'] ?? '')
+                ->values();
+
+            return response()->json([
+                'count' => $orders->count(),
+                'orders' => $orders,
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Failed to list Shopify orders', ['error' => $e->getMessage()]);
+
+            return response()->json([
+                'error' => 'Impossible de recuperer les commandes Shopify',
                 'details' => $e->getMessage(),
             ], 500);
         }

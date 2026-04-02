@@ -76,6 +76,19 @@ class ShopifyService
         return $response->json('products', []);
     }
 
+    public function listOrders(): array
+    {
+        $url = "{$this->shopifyUrl}/admin/api/{$this->apiVersion}/orders.json?limit=50&status=any&financial_status=paid&order=created_at%20desc";
+
+        $response = Http::withBasicAuth($this->apiKey, $this->apiPassword)->get($url);
+
+        if (!$response->successful()) {
+            throw new \RuntimeException('Failed to fetch Shopify orders: ' . $response->body());
+        }
+
+        return $response->json('orders', []);
+    }
+
     public function createTestOrder(int|string $variantId, string $email): array
     {
         $url = "{$this->shopifyUrl}/admin/api/{$this->apiVersion}/orders.json";
