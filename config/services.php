@@ -36,10 +36,12 @@ return [
     ],
 
     'shopify' => [
+        'store_domain' => env('SHOPIFY_STORE_DOMAIN'),
+        'admin_access_token' => env('SHOPIFY_ADMIN_ACCESS_TOKEN'),
         'api_url' => env('SHOPIFY_API_URL'),
         'api_key' => env('SHOPIFY_API_KEY'),
         'api_password' => env('SHOPIFY_API_PASSWORD'),
-        'api_version' => env('SHOPIFY_API_VERSION', '2025-04'),
+        'api_version' => env('SHOPIFY_API_VERSION', '2025-01'),
         'webhook_secret' => env('SHOPIFY_WEBHOOK'),
     ],
 

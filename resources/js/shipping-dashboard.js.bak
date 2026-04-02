@@ -286,18 +286,6 @@ async function loadOrders() {
 
     try {
         const response = await fetch("/api/shopify/orders");
-        const contentType = response.headers.get("content-type") || "";
-
-        if (!response.ok) {
-            const errorBody = await response.text();
-            throw new Error(`API /orders ${response.status}: ${errorBody.slice(0, 160)}`);
-        }
-
-        if (!contentType.includes("application/json")) {
-            const rawBody = await response.text();
-            throw new Error(`Réponse non JSON reçue: ${rawBody.slice(0, 160)}`);
-        }
-
         const data = await response.json();
         renderOrders(data);
         console.log("✓ Commandes chargées");
@@ -453,7 +441,7 @@ function renderOrderResult(payload, statusPayload = null) {
             </div>
             <div class="mt-3 grid gap-2 text-sm text-slate-700 md:grid-cols-2">
                 <p><span class="font-semibold">Commande Shopify:</span> ${orderId}</p>
-                <p><span class="font-semibold">Contrats liés trouvés:</span> ${subscriptions}</p>
+                <p><span class="font-semibold">Abonnements créés:</span> ${subscriptions}</p>
             </div>
             ${paymentLink ? `<a href="${paymentLink}" target="_blank" rel="noopener noreferrer" class="mt-4 inline-block rounded bg-slate-900 px-4 py-2 text-sm font-semibold text-white">Ouvrir le paiement</a>` : ""}
         </div>
@@ -492,21 +480,15 @@ function renderOrders(data) {
         .map((order, idx) => {
             const address = formatAddress(order.shipping_address);
             const price = formatPrice(order.total_price, order.currency);
-            const isPaid = String(order.financial_status || "").toLowerCase() === "paid";
+            const boxesLabel =
+                order.subscription_count > 0
+                    ? `${order.shipped_boxes || 0}/${order.total_boxes || 0}`
+                    : "-";
+            const isPaid = order.financial_status === "paid";
+            const hasSubscription = order.subscription_count > 0;
             const nextShipment = order.next_shipment_at
                 ? formatDate(order.next_shipment_at)
                 : "-";
-            const firstContract = Array.isArray(order.shopify_subscriptions)
-                ? order.shopify_subscriptions[0]
-                : null;
-            const planName = order.selling_plan_name || firstContract?.product_title || "-";
-            const hasSubscription = (order.subscription_count > 0) || planName !== "-";
-            const contractStatus = firstContract?.status || "-";
-            const billingInterval = firstContract?.billing_interval || "-";
-            const billingIntervalCount = firstContract?.billing_interval_count || "-";
-            const renewalCount = Array.isArray(firstContract?.renewal_orders)
-                ? firstContract.renewal_orders.length
-                : 0;
 
             return `
             <tr class="hover:bg-slate-50 transition-colors">
@@ -546,12 +528,9 @@ function renderOrders(data) {
                     ${
                         hasSubscription
                             ? `
-                        <div class="inline-flex flex-col items-center text-sm text-left">
+                        <div class="inline-flex flex-col items-center text-sm">
                             <span class="font-bold text-indigo-700">${order.subscription_count}</span>
-                            <span class="text-xs text-indigo-700">${escapeHtml(planName)}</span>
-                            <span class="text-xs text-slate-600">${escapeHtml(contractStatus)}</span>
-                            <span class="text-xs text-slate-500">${escapeHtml(String(billingInterval))} x ${escapeHtml(String(billingIntervalCount))}</span>
-                            <span class="text-xs text-slate-500">Renouvellements: ${renewalCount}</span>
+                            <span class="text-xs text-indigo-600">Boxes ${boxesLabel}</span>
                         </div>
                     `
                             : `<span class="text-slate-400 text-sm">-</span>`

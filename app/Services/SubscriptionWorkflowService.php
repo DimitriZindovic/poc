@@ -12,9 +12,9 @@ use Illuminate\Support\Facades\DB;
 
 class SubscriptionWorkflowService
 {
-    public function ingestPaidOrder(array $orderPayload): array
+    public function ingestPaidOrder(array $orderPayload, ?string $subscriptionType = null): array
     {
-        return DB::transaction(function () use ($orderPayload) {
+        return DB::transaction(function () use ($orderPayload, $subscriptionType) {
             $shopifyOrder = ShopifyOrder::updateOrCreate(
                 ['shopify_order_id' => (string) $orderPayload['id']],
                 [
@@ -28,6 +28,31 @@ class SubscriptionWorkflowService
 
             $createdSubscriptions = 0;
 
+            // Mode manuel: créer une subscription avec le type spécifié
+            if (!empty($subscriptionType)) {
+                $shippingMethod = $this->detectShippingMethod($subscriptionType);
+                $totalBoxes = $this->detectTotalBoxes($subscriptionType);
+
+                Subscription::create([
+                    'shopify_order_ref_id' => $shopifyOrder->id,
+                    'shopify_customer_id' => (string) Arr::get($orderPayload, 'customer.id', 'MANUAL'),
+                    'email' => Arr::get($orderPayload, 'email'),
+                    'product_title' => $subscriptionType,
+                    'total_boxes' => $totalBoxes,
+                    'shipped_boxes' => 0,
+                    'status' => 'active',
+                    'shipping_method' => $shippingMethod,
+                    'shipping_address' => Arr::get($orderPayload, 'shipping_address'),
+                    'next_shipment_at' => now()->toDateString(),
+                ]);
+
+                return [
+                    'order_id' => $shopifyOrder->id,
+                    'created_subscriptions' => 1,
+                ];
+            }
+
+            // Mode automatique: extraire subscriptions du payload
             foreach (Arr::get($orderPayload, 'line_items', []) as $item) {
                 $title = (string) Arr::get($item, 'title', '');
                 $isSubscription = str_contains(strtolower($title), 'abonnement') || str_contains(strtolower($title), 'box');

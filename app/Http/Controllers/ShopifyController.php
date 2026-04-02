@@ -42,6 +42,7 @@ class ShopifyController extends Controller
                 'has_write_orders' => in_array('write_orders', $scopeHandles, true),
                 'has_read_orders' => in_array('read_orders', $scopeHandles, true),
                 'has_read_products' => in_array('read_products', $scopeHandles, true),
+                'has_read_own_subscription_contracts' => in_array('read_own_subscription_contracts', $scopeHandles, true),
             ]);
         } catch (\Throwable $e) {
             Log::error('Failed to read Shopify access scopes', ['error' => $e->getMessage()]);
@@ -56,38 +57,66 @@ class ShopifyController extends Controller
     public function orders()
     {
         try {
-            $shopifyOrders = $this->shopifyService->listOrders();
-            $subscriptionGroups = Subscription::with('order')
-                ->get()
-                ->groupBy(fn(Subscription $subscription) => (string) $subscription->shopify_order_ref_id);
+            $shopifyOrders = collect($this->shopifyService->listOrders());
+            $subscriptionWarning = null;
+            $contractsByOrderId = collect();
 
-            $orders = collect($shopifyOrders)
-                ->map(function (array $order) use ($subscriptionGroups) {
-                    $lineItems = Arr::get($order, 'line_items', []);
-                    $firstLineItem = is_array($lineItems) && !empty($lineItems) ? $lineItems[0] : [];
-                    $shippingAddress = Arr::get($order, 'shipping_address');
-                    $orderId = (string) Arr::get($order, 'id', '');
-                    $localSubscriptions = $subscriptionGroups->get($orderId, collect());
+            try {
+                $contracts = collect($this->shopifyService->listSubscriptionContracts());
+                $contractsByOrderId = $contracts
+                    ->flatMap(function (array $contract) {
+                        $orderIds = collect([$contract['originOrderId'] ?? null])
+                            ->merge(collect($contract['renewalOrders'] ?? [])->pluck('orderId'))
+                            ->filter();
 
-                    return [
-                        'shopify_order_id' => $orderId,
-                        'email' => Arr::get($order, 'email'),
-                        'customer_name' => trim((string) (Arr::get($order, 'customer.first_name', '') . ' ' . Arr::get($order, 'customer.last_name', ''))),
-                        'financial_status' => Arr::get($order, 'financial_status', 'paid'),
-                        'total_price' => Arr::get($order, 'total_price', Arr::get($firstLineItem, 'price')),
-                        'currency' => Arr::get($order, 'currency', Arr::get($order, 'presentment_currency', 'EUR')),
-                        'line_item_title' => Arr::get($firstLineItem, 'title'),
-                        'line_item_quantity' => Arr::get($firstLineItem, 'quantity', 1),
-                        'shipping_address' => $shippingAddress,
-                        'created_at' => Arr::get($order, 'created_at'),
-                        'subscription_count' => $localSubscriptions->count(),
-                        'shipping_method' => optional($localSubscriptions->first())->shipping_method,
-                        'local_status' => optional($localSubscriptions->first())->status,
-                        'shipped_boxes' => (int) $localSubscriptions->sum('shipped_boxes'),
-                        'total_boxes' => (int) $localSubscriptions->sum('total_boxes'),
-                        'next_shipment_at' => optional($localSubscriptions->first())->next_shipment_at?->toIso8601String(),
-                        'order_status_url' => Arr::get($order, 'order_status_url'),
-                    ];
+                        return $orderIds->map(fn(string $orderId) => [
+                            'orderId' => $orderId,
+                            'contract' => $contract,
+                        ]);
+                    })
+                    ->groupBy('orderId')
+                    ->map(fn($rows) => collect($rows)->pluck('contract')->values());
+            } catch (\Throwable $e) {
+                Log::warning('Failed to fetch Shopify subscriptions', ['error' => $e->getMessage()]);
+                $subscriptionWarning = $e->getMessage();
+            }
+
+            $orders = $shopifyOrders
+                ->map(function (array $order) use ($contractsByOrderId) {
+                    $orderId = (string) ($order['shopify_order_id'] ?? '');
+                    $contracts = $contractsByOrderId->get($orderId, collect());
+                    $firstContract = $contracts->first();
+                    $sellingPlanName = $order['selling_plan_name'] ?? null;
+
+                    if ($contracts->isEmpty() && !empty($sellingPlanName)) {
+                        $contracts = collect([[
+                            'contractId' => null,
+                            'status' => 'PLAN_ONLY',
+                            'planName' => $sellingPlanName,
+                            'billingInterval' => null,
+                            'billingIntervalCount' => null,
+                            'nextBillingDate' => null,
+                            'renewalOrders' => [],
+                        ]]);
+                        $firstContract = $contracts->first();
+                    }
+
+                    return array_merge($order, [
+                        'subscription_count' => $contracts->count(),
+                        'shopify_subscriptions' => $contracts->map(fn(array $contract) => [
+                            'id' => $contract['contractId'] ?? null,
+                            'product_title' => $contract['planName'] ?? null,
+                            'status' => $contract['status'] ?? null,
+                            'next_billing_date' => $contract['nextBillingDate'] ?? null,
+                            'billing_interval' => $contract['billingInterval'] ?? null,
+                            'billing_interval_count' => $contract['billingIntervalCount'] ?? null,
+                            'renewal_orders' => $contract['renewalOrders'] ?? [],
+                        ])->values()->all(),
+                        'selling_plan_name' => $sellingPlanName ?? ($firstContract['planName'] ?? null),
+                        'local_status' => $firstContract['status'] ?? null,
+                        'next_shipment_at' => $firstContract['nextBillingDate'] ?? null,
+                        'renewal_orders' => $firstContract['renewalOrders'] ?? [],
+                    ]);
                 })
                 ->sortByDesc(fn(array $order) => $order['created_at'] ?? '')
                 ->values();
@@ -95,12 +124,32 @@ class ShopifyController extends Controller
             return response()->json([
                 'count' => $orders->count(),
                 'orders' => $orders,
+                'subscription_warning' => $subscriptionWarning,
             ]);
         } catch (\Throwable $e) {
             Log::error('Failed to list Shopify orders', ['error' => $e->getMessage()]);
 
             return response()->json([
                 'error' => 'Impossible de recuperer les commandes Shopify',
+                'details' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function subscriptionContracts()
+    {
+        try {
+            $contracts = $this->shopifyService->listSubscriptionContracts();
+
+            return response()->json([
+                'count' => count($contracts),
+                'contracts' => $contracts,
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Failed to list Shopify subscription contracts', ['error' => $e->getMessage()]);
+
+            return response()->json([
+                'error' => 'Impossible de recuperer les contrats d\'abonnement Shopify',
                 'details' => $e->getMessage(),
             ], 500);
         }
@@ -127,13 +176,24 @@ class ShopifyController extends Controller
 
         try {
             $order = $this->shopifyService->createTestOrder((int) $validated['variant_id'], $validated['email']);
-            $ingest = $this->workflowService->ingestPaidOrder($order);
+
+            // Store order locally for dashboard display.
+            ShopifyOrder::updateOrCreate(
+                ['shopify_order_id' => (string) ($order['id'] ?? '')],
+                [
+                    'email' => Arr::get($order, 'email'),
+                    'customer_name' => trim((string) (Arr::get($order, 'customer.first_name', '') . ' ' . Arr::get($order, 'customer.last_name', ''))),
+                    'shipping_address' => Arr::get($order, 'shipping_address'),
+                    'financial_status' => Arr::get($order, 'financial_status'),
+                    'raw_payload' => $order,
+                ]
+            );
 
             return response()->json([
-                'message' => 'Commande test creee dans Shopify et abonnement enregistre',
+                'message' => 'Commande creee dans Shopify',
                 'mode' => 'shopify_admin_api',
                 'shopify_order_id' => $order['id'] ?? null,
-                'created_subscriptions' => $ingest['created_subscriptions'],
+                'note' => 'Les abonnements reels sont recuperes depuis Shopify',
             ], 201);
         } catch (\Throwable $e) {
             Log::error('Failed to simulate Shopify order', ['error' => $e->getMessage()]);
@@ -229,4 +289,6 @@ class ShopifyController extends Controller
             return response()->json(['error' => 'Webhook processing error'], 500);
         }
     }
+
+
 }
