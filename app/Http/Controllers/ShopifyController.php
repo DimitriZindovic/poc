@@ -6,6 +6,7 @@ use App\Models\ShopifyOrder;
 use App\Models\Subscription;
 use App\Services\ShopifyService;
 use App\Services\SubscriptionWorkflowService;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Log;
@@ -87,6 +88,16 @@ class ShopifyController extends Controller
                     $contracts = $contractsByOrderId->get($orderId, collect());
                     $firstContract = $contracts->first();
                     $sellingPlanName = $order['selling_plan_name'] ?? null;
+                    $orderCreatedAt = $order['created_at'] ?? null;
+
+                    $fallbackNextShipmentAt = null;
+                    if (!empty($orderCreatedAt)) {
+                        try {
+                            $fallbackNextShipmentAt = Carbon::parse($orderCreatedAt)->addMonthNoOverflow()->toIso8601String();
+                        } catch (\Throwable $e) {
+                            $fallbackNextShipmentAt = null;
+                        }
+                    }
 
                     if ($contracts->isEmpty() && !empty($sellingPlanName)) {
                         $contracts = collect([[
@@ -114,7 +125,7 @@ class ShopifyController extends Controller
                         ])->values()->all(),
                         'selling_plan_name' => $sellingPlanName ?? ($firstContract['planName'] ?? null),
                         'local_status' => $firstContract['status'] ?? null,
-                        'next_shipment_at' => $firstContract['nextBillingDate'] ?? null,
+                        'next_shipment_at' => $firstContract['nextBillingDate'] ?? $fallbackNextShipmentAt,
                         'renewal_orders' => $firstContract['renewalOrders'] ?? [],
                     ]);
                 })
