@@ -104,12 +104,36 @@ class ShopifyController extends Controller
                             'contractId' => null,
                             'status' => 'PLAN_ONLY',
                             'planName' => $sellingPlanName,
+                            'originOrderId' => $orderId,
                             'billingInterval' => null,
                             'billingIntervalCount' => null,
                             'nextBillingDate' => null,
                             'renewalOrders' => [],
                         ]]);
                         $firstContract = $contracts->first();
+                    }
+
+                    $resolveCurrentBox = function (array $contract, string $currentOrderId): int {
+                        $originOrderId = (string) ($contract['originOrderId'] ?? '');
+                        if ($originOrderId !== '' && $originOrderId === $currentOrderId) {
+                            return 1;
+                        }
+
+                        $renewalOrders = collect($contract['renewalOrders'] ?? []);
+                        $index = $renewalOrders
+                            ->pluck('orderId')
+                            ->search($currentOrderId);
+
+                        if ($index === false) {
+                            return 1;
+                        }
+
+                        return ((int) $index) + 2;
+                    };
+
+                    $currentBox = null;
+                    if (is_array($firstContract)) {
+                        $currentBox = $resolveCurrentBox($firstContract, $orderId);
                     }
 
                     return array_merge($order, [
@@ -121,10 +145,12 @@ class ShopifyController extends Controller
                             'next_billing_date' => $contract['nextBillingDate'] ?? null,
                             'billing_interval' => $contract['billingInterval'] ?? null,
                             'billing_interval_count' => $contract['billingIntervalCount'] ?? null,
+                            'current_box' => $resolveCurrentBox($contract, $orderId),
                             'renewal_orders' => $contract['renewalOrders'] ?? [],
                         ])->values()->all(),
                         'selling_plan_name' => $sellingPlanName ?? ($firstContract['planName'] ?? null),
                         'local_status' => $firstContract['status'] ?? null,
+                        'current_box' => $currentBox,
                         'next_shipment_at' => $firstContract['nextBillingDate'] ?? $fallbackNextShipmentAt,
                         'renewal_orders' => $firstContract['renewalOrders'] ?? [],
                     ]);

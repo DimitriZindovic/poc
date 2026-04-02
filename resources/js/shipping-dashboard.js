@@ -504,6 +504,7 @@ function renderOrders(data) {
             const contractStatus = firstContract?.status || "-";
             const billingInterval = firstContract?.billing_interval || "-";
             const billingIntervalCount = firstContract?.billing_interval_count || "-";
+            const currentBox = order.current_box || firstContract?.current_box || null;
             const renewalCount = Array.isArray(firstContract?.renewal_orders)
                 ? firstContract.renewal_orders.length
                 : 0;
@@ -551,6 +552,7 @@ function renderOrders(data) {
                             <span class="text-xs text-indigo-700">${escapeHtml(planName)}</span>
                             <span class="text-xs text-slate-600">${escapeHtml(contractStatus)}</span>
                             <span class="text-xs text-slate-500">${escapeHtml(String(billingInterval))} x ${escapeHtml(String(billingIntervalCount))}</span>
+                            <span class="text-xs font-semibold text-indigo-800">Box actuelle: ${currentBox ? escapeHtml(String(currentBox)) : "-"}</span>
                             <span class="text-xs text-slate-500">Renouvellements: ${renewalCount}</span>
                         </div>
                     `
