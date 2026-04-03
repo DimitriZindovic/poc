@@ -79,6 +79,24 @@ function formatDate(value) {
 }
 
 /**
+ * Formate une date en format FR sans heure
+ */
+function formatDateOnly(value) {
+    if (!value) {
+        return "N/A";
+    }
+
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+        return String(value);
+    }
+
+    return new Intl.DateTimeFormat("fr-FR", {
+        dateStyle: "medium",
+    }).format(date);
+}
+
+/**
  * Échappe les caractères HTML dangereux
  */
 function escapeHtml(text) {
@@ -246,6 +264,13 @@ async function loadProducts() {
                         ? product.variants[0]
                         : null;
                 const variantId = variant ? variant.id : "-";
+                const imageUrl =
+                    product?.image?.src ||
+                    (Array.isArray(product?.images) && product.images[0]
+                        ? product.images[0].src
+                        : "");
+                const productTitle = escapeHtml(product.title || "Produit");
+                const price = escapeHtml(variant?.price || "-");
 
                 if (variant && variant.id) {
                     const option = document.createElement("option");
@@ -254,7 +279,18 @@ async function loadProducts() {
                     variantSelect.appendChild(option);
                 }
 
-                return `<li class="rounded border border-slate-200 p-2"><strong>${product.title}</strong><br>Variant ID: ${variantId}</li>`;
+                return `
+                    <li class="product-card">
+                        <div class="product-media">
+                            ${imageUrl ? `<img src="${escapeHtml(imageUrl)}" alt="${productTitle}">` : ""}
+                        </div>
+                        <div class="product-meta">
+                            <h3>${productTitle}</h3>
+                            <p>Variant: ${escapeHtml(String(variantId))}</p>
+                            <p>Prix: ${price} EUR</p>
+                        </div>
+                    </li>
+                `;
             })
             .join("");
 
@@ -290,7 +326,9 @@ async function loadOrders() {
 
         if (!response.ok) {
             const errorBody = await response.text();
-            throw new Error(`API /orders ${response.status}: ${errorBody.slice(0, 160)}`);
+            throw new Error(
+                `API /orders ${response.status}: ${errorBody.slice(0, 160)}`,
+            );
         }
 
         if (!contentType.includes("application/json")) {
@@ -488,109 +526,128 @@ function renderOrders(data) {
         return;
     }
 
-    const rows = orders
+    const total = orders.length;
+    const paidCount = orders.filter(
+        (order) =>
+            String(order.financial_status || "").toLowerCase() === "paid",
+    ).length;
+    const withSubscriptionCount = orders.filter((order) => {
+        const firstContract = Array.isArray(order.shopify_subscriptions)
+            ? order.shopify_subscriptions[0]
+            : null;
+        const planName =
+            order.selling_plan_name || firstContract?.product_title || "-";
+        return order.subscription_count > 0 || planName !== "-";
+    }).length;
+
+    const cards = orders
         .map((order, idx) => {
             const address = formatAddress(order.shipping_address);
             const price = formatPrice(order.total_price, order.currency);
-            const isPaid = String(order.financial_status || "").toLowerCase() === "paid";
+            const isPaid =
+                String(order.financial_status || "").toLowerCase() === "paid";
             const nextShipment = order.next_shipment_at
-                ? formatDate(order.next_shipment_at)
+                ? formatDateOnly(order.next_shipment_at)
                 : "-";
             const firstContract = Array.isArray(order.shopify_subscriptions)
                 ? order.shopify_subscriptions[0]
                 : null;
-            const planName = order.selling_plan_name || firstContract?.product_title || "-";
-            const hasSubscription = (order.subscription_count > 0) || planName !== "-";
+            const planName =
+                order.selling_plan_name || firstContract?.product_title || "-";
+            const hasSubscription =
+                order.subscription_count > 0 || planName !== "-";
             const contractStatus = firstContract?.status || "-";
             const billingInterval = firstContract?.billing_interval || "-";
-            const billingIntervalCount = firstContract?.billing_interval_count || "-";
-            const currentBox = order.current_box || firstContract?.current_box || null;
+            const billingIntervalCount =
+                firstContract?.billing_interval_count || "-";
+            const currentBox =
+                order.current_box || firstContract?.current_box || null;
             const renewalCount = Array.isArray(firstContract?.renewal_orders)
                 ? firstContract.renewal_orders.length
                 : 0;
+            const paymentBadge = isPaid
+                ? '<span class="order-chip order-chip-success">Payée</span>'
+                : '<span class="order-chip order-chip-warn">En attente</span>';
+            const subscriptionBlock = hasSubscription
+                ? `
+                    <div class="order-subscription">
+                        <p class="order-subscription-title">${escapeHtml(planName)}</p>
+                        <div class="order-subscription-grid">
+                            <p><span>Statut</span><strong>${escapeHtml(contractStatus)}</strong></p>
+                            <p><span>Fréquence</span><strong>${escapeHtml(String(billingInterval))} x ${escapeHtml(String(billingIntervalCount))}</strong></p>
+                            <p><span>Box</span><strong>${currentBox ? escapeHtml(String(currentBox)) : "-"}</strong></p>
+                            <p><span>Renouvellements</span><strong>${renewalCount}</strong></p>
+                        </div>
+                    </div>
+                `
+                : "";
+            const cardToneClass = hasSubscription
+                ? "order-card order-card--subscribed"
+                : "order-card order-card--plain";
 
             return `
-            <tr class="hover:bg-slate-50 transition-colors">
-                <!-- # -->
-                <td class="px-4 py-3 border-b border-slate-200 text-sm font-bold text-slate-500">${idx + 1}</td>
+            <article class="${cardToneClass}">
+                <div class="order-top">
+                    <div>
+                        <h3 class="order-title">${escapeHtml(order.order_name || `Commande ${idx + 1}`)}</h3>
+                        <p class="order-sub">${escapeHtml(order.customer_name || order.email || "Client")}</p>
+                    </div>
+                    <div class="order-top-right">
+                        ${paymentBadge}
+                        <p class="order-date">${formatDate(order.created_at)}</p>
+                    </div>
+                </div>
 
-                <!-- Client -->
-                <td class="px-4 py-3 border-b border-slate-200">
-                    <p class="font-semibold text-slate-900 text-sm">${escapeHtml(order.customer_name || order.email || "Client")}</p>
-                    <p class="text-xs text-slate-500">#${escapeHtml(order.shopify_order_id || "N/A")}</p>
-                </td>
+                <div class="order-grid">
+                    <div class="order-item">
+                        <span>Produit</span>
+                        <strong>${escapeHtml(order.line_item_title || "N/A")}</strong>
+                    </div>
+                    <div class="order-item">
+                        <span>Montant</span>
+                        <strong>${price}</strong>
+                    </div>
+                    <div class="order-item">
+                        <span>Email</span>
+                        <strong>${escapeHtml(order.email || "-")}</strong>
+                    </div>
+                    <div class="order-item">
+                        <span>Prochain envoi</span>
+                        <strong>${nextShipment}</strong>
+                    </div>
+                    <div class="order-item order-item-wide">
+                        <span>Adresse</span>
+                        <strong>${escapeHtml(address)}</strong>
+                    </div>
+                </div>
 
-                <!-- Date -->
-                <td class="px-4 py-3 border-b border-slate-200 text-xs text-slate-600 whitespace-nowrap">${formatDate(order.created_at)}</td>
-
-                <!-- Produit -->
-                <td class="px-4 py-3 border-b border-slate-200">
-                    <p class="text-sm font-medium text-slate-900">${escapeHtml(order.line_item_title || "N/A")}</p>
-                    <p class="text-xs text-slate-500">Qté: ${order.line_item_quantity || 1}</p>
-                </td>
-
-                <!-- Adresse -->
-                <td class="px-4 py-3 border-b border-slate-200 text-sm text-slate-700">${escapeHtml(address)}</td>
-
-                <!-- Prix -->
-                <td class="px-4 py-3 border-b border-slate-200 text-right font-bold text-slate-900 text-sm">${price}</td>
-
-                <!-- Statut Paiement -->
-                <td class="px-4 py-3 border-b border-slate-200">
-                    <span class="inline-flex items-center gap-1 whitespace-nowrap px-2.5 py-1 rounded-full text-xs leading-none font-semibold ${isPaid ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}">
-                        ${isPaid ? "✓ Payée" : "⏳ En attente"}
-                    </span>
-                </td>
-
-                <!-- Abonnement -->
-                <td class="px-4 py-3 border-b border-slate-200 text-center">
-                    ${
-                        hasSubscription
-                            ? `
-                        <div class="inline-flex flex-col items-center text-sm text-left">
-                            <span class="font-bold text-indigo-700">${order.subscription_count}</span>
-                            <span class="text-xs text-indigo-700">${escapeHtml(planName)}</span>
-                            <span class="text-xs text-slate-600">${escapeHtml(contractStatus)}</span>
-                            <span class="text-xs text-slate-500">${escapeHtml(String(billingInterval))} x ${escapeHtml(String(billingIntervalCount))}</span>
-                            <span class="text-xs font-semibold text-indigo-800">Box actuelle: ${currentBox ? escapeHtml(String(currentBox)) : "-"}</span>
-                            <span class="text-xs text-slate-500">Renouvellements: ${renewalCount}</span>
-                        </div>
-                    `
-                            : `<span class="text-slate-400 text-sm">-</span>`
-                    }
-                </td>
-
-                <!-- Prochain envoi -->
-                <td class="px-4 py-3 border-b border-slate-200 text-xs text-slate-500 whitespace-nowrap">${nextShipment}</td>
-            </tr>
+                ${subscriptionBlock}
+            </article>
         `;
         })
         .join("");
 
     ordersResult.innerHTML = `
-        <div class="overflow-x-auto">
-            <table class="w-full text-sm">
-                <thead class="bg-white border-b border-slate-300 sticky top-0">
-                    <tr>
-                        <th class="px-4 py-3 text-left text-xs font-bold text-slate-600 uppercase">#</th>
-                        <th class="px-4 py-3 text-left text-xs font-bold text-slate-600 uppercase">Client</th>
-                        <th class="px-4 py-3 text-left text-xs font-bold text-slate-600 uppercase">Date</th>
-                        <th class="px-4 py-3 text-left text-xs font-bold text-slate-600 uppercase">Produit</th>
-                        <th class="px-4 py-3 text-left text-xs font-bold text-slate-600 uppercase">Adresse</th>
-                        <th class="px-4 py-3 text-right text-xs font-bold text-slate-600 uppercase">Montant</th>
-                        <th class="px-4 py-3 text-left text-xs font-bold text-slate-600 uppercase">Paiement</th>
-                        <th class="px-4 py-3 text-center text-xs font-bold text-slate-600 uppercase">Abonnement</th>
-                        <th class="px-4 py-3 text-left text-xs font-bold text-slate-600 uppercase">Prochain envoi</th>
-                    </tr>
-                </thead>
-                <tbody class="bg-white">
-                    ${rows}
-                </tbody>
-            </table>
+        <div class="orders-overview">
+            <div class="orders-kpi">
+                <span>Commandes</span>
+                <strong>${total}</strong>
+            </div>
+            <div class="orders-kpi">
+                <span>Payées</span>
+                <strong>${paidCount}</strong>
+            </div>
+            <div class="orders-kpi">
+                <span>Avec abonnement</span>
+                <strong>${withSubscriptionCount}</strong>
+            </div>
+        </div>
+        <div class="orders-list">
+            ${cards}
         </div>
     `;
 
-    console.log("✓ Commandes affichées (tableau simple)");
+    console.log("✓ Commandes affichées (cards)");
 }
 
 // ============================================================
@@ -750,7 +807,9 @@ document.addEventListener("DOMContentLoaded", () => {
     initializeDOMReferences();
 
     if (!variantSelect || !simulateResult || !ordersResult) {
-        console.error("❌ Certains éléments DOM obligatoires ne sont pas trouvés");
+        console.error(
+            "❌ Certains éléments DOM obligatoires ne sont pas trouvés",
+        );
         return;
     }
 

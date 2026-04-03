@@ -100,16 +100,18 @@ class ShopifyController extends Controller
                     }
 
                     if ($contracts->isEmpty() && !empty($sellingPlanName)) {
-                        $contracts = collect([[
-                            'contractId' => null,
-                            'status' => 'PLAN_ONLY',
-                            'planName' => $sellingPlanName,
-                            'originOrderId' => $orderId,
-                            'billingInterval' => null,
-                            'billingIntervalCount' => null,
-                            'nextBillingDate' => null,
-                            'renewalOrders' => [],
-                        ]]);
+                        $contracts = collect([
+                            [
+                                'contractId' => null,
+                                'status' => 'PLAN_ONLY',
+                                'planName' => $sellingPlanName,
+                                'originOrderId' => $orderId,
+                                'billingInterval' => null,
+                                'billingIntervalCount' => null,
+                                'nextBillingDate' => null,
+                                'renewalOrders' => [],
+                            ]
+                        ]);
                         $firstContract = $contracts->first();
                     }
 

@@ -88,7 +88,7 @@ class ShopifyService
 
     public function listOrders(): array
     {
-                $query = <<<'GQL'
+        $query = <<<'GQL'
                         query GetOrders($first: Int!, $after: String) {
                             orders(first: $first, after: $after, sortKey: CREATED_AT, reverse: true, query: "financial_status:paid") {
                                 pageInfo {
@@ -131,26 +131,26 @@ class ShopifyService
                         }
                 GQL;
 
-                $orders = [];
-                $cursor = null;
+        $orders = [];
+        $cursor = null;
 
-                do {
-                        $payload = $this->graphqlQuery($query, [
-                                'first' => 50,
-                                'after' => $cursor,
-                        ]);
+        do {
+            $payload = $this->graphqlQuery($query, [
+                'first' => 50,
+                'after' => $cursor,
+            ]);
 
-                        $connection = Arr::get($payload, 'data.orders', []);
-                        foreach (Arr::get($connection, 'edges', []) as $edge) {
-                                $orders[] = $this->normalizeGraphqlOrder((array) ($edge['node'] ?? []));
-                        }
+            $connection = Arr::get($payload, 'data.orders', []);
+            foreach (Arr::get($connection, 'edges', []) as $edge) {
+                $orders[] = $this->normalizeGraphqlOrder((array) ($edge['node'] ?? []));
+            }
 
-                        $pageInfo = Arr::get($connection, 'pageInfo', []);
-                        $hasNextPage = (bool) Arr::get($pageInfo, 'hasNextPage', false);
-                        $cursor = Arr::get($pageInfo, 'endCursor');
-                } while ($hasNextPage && !empty($cursor));
+            $pageInfo = Arr::get($connection, 'pageInfo', []);
+            $hasNextPage = (bool) Arr::get($pageInfo, 'hasNextPage', false);
+            $cursor = Arr::get($pageInfo, 'endCursor');
+        } while ($hasNextPage && !empty($cursor));
 
-                return $orders;
+        return $orders;
     }
 
     public function createTestOrder(int|string $variantId, string $email): array

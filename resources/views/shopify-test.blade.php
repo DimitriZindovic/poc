@@ -6,53 +6,62 @@
     <title>Pilotage Abonnements</title>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
-<body class="min-h-screen bg-slate-100 text-slate-900">
-    <main class="mx-auto max-w-5xl p-6">
-        <header>
-            <h1 class="text-2xl font-bold">Pilotage des Abonnements</h1>
-            <p class="mt-2 text-sm text-slate-600">Suivez les produits, les commandes et les expéditions depuis un tableau de pilotage unique.</p>
+<body>
+    <main class="dashboard-shell">
+        <header class="hero-panel">
+            <div class="hero-content">
+                <div>
+                    <h1 class="hero-title">Pilotage commandes & abonnements</h1>
+                    <p class="hero-subtitle">Catalogue, création de commande et suivi abonnement sur une interface opérationnelle.</p>
+                </div>
+                <div class="hero-badge">DZ</div>
+            </div>
         </header>
 
-        <!-- === Catalogue Shopify === -->
-        <section class="mt-6 rounded-xl border border-slate-300 bg-white p-4">
-            <h2 class="text-lg font-semibold">Catalogue Shopify</h2>
-            <button id="load-products" class="mt-3 rounded bg-slate-900 px-4 py-2 text-white">Charger les produits</button>
-            <ul id="products" class="mt-4 space-y-2 text-sm">
-                <li class="rounded border border-dashed border-slate-300 bg-slate-50 p-3 text-slate-600">Cliquez sur "Charger les produits" pour afficher le catalogue.</li>
-            </ul>
-        </section>
+        <section class="dashboard-grid">
+            <div class="layout-2">
+                <div class="panel panel-sticky">
+                    <h2 class="panel-title">Créer une commande</h2>
+                    <p class="panel-note">Produit + email client.</p>
 
-        <!-- === Créer une Commande === -->
-        <section class="mt-6 rounded-xl border border-slate-300 bg-white p-4">
-            <h2 class="text-lg font-semibold">Créer une Commande avec Subscription</h2>
-            <form id="simulate-order-form" class="mt-4 space-y-4">
-                <div>
-                    <label for="variant-id" class="block text-sm font-medium">Sélectionner un produit</label>
-                    <select id="variant-id" class="mt-2 w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm">
-                        <option value="">Charger les produits d'abord</option>
-                    </select>
+                    <form id="simulate-order-form" class="mt-4 space-y-4">
+                        <div>
+                            <label for="variant-id" class="field-label">Produit</label>
+                            <select id="variant-id" class="field-control">
+                                <option value="">Charger les produits d'abord</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="buyer-email" class="field-label">Email client</label>
+                            <input id="buyer-email" type="email" placeholder="client@example.fr" class="field-control" required />
+                        </div>
+                        <button type="submit" class="btn-brand">Créer la commande</button>
+                    </form>
+
+                    <div id="simulate-result" class="mt-4 text-sm text-slate-600"></div>
                 </div>
-                <div>
-                    <label for="buyer-email" class="block text-sm font-medium">Email de l'acheteur</label>
-                    <input id="buyer-email" type="email" placeholder="client@example.fr" class="mt-2 w-full rounded border border-slate-300 px-3 py-2 text-sm" required />
+
+                <div class="panel">
+                    <div class="flex items-center justify-between gap-3">
+                        <h2 class="panel-title">Catalogue Shopify</h2>
+                        <button id="load-products" class="btn-neutral">Charger les produits</button>
+                    </div>
+                    <ul id="products" class="products-grid mt-4 text-sm">
+                        <li class="product-placeholder">Cliquez sur "Charger les produits".</li>
+                    </ul>
                 </div>
-                <button type="submit" class="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Créer la commande</button>
-            </form>
-            <p class="mt-2 text-xs text-slate-500 italic">Les abonnements existants dans Shopify seront affichés ci-dessous</p>
-            <div id="simulate-result" class="mt-4 text-sm text-slate-600"></div>
-        </section>
-
-        <!-- === Commandes === -->
-        <section class="mt-6 rounded-xl border border-slate-300 bg-white p-4">
-            <div class="flex items-center justify-between gap-3 mb-4">
-                <h2 class="text-lg font-semibold">Commandes Shopify</h2>
-                <button id="load-orders" class="rounded bg-slate-900 px-4 py-2 text-white text-sm">Rafraîchir</button>
             </div>
-            <div id="orders-result" class="rounded-xl border border-slate-200 bg-white p-0">
-                Cliquez sur "Rafraîchir" pour charger les données.
-            </div>
-        </section>
 
+            <section class="panel">
+                <div class="mb-4 flex items-center justify-between gap-3">
+                    <h2 class="panel-title">Commandes</h2>
+                    <button id="load-orders" class="btn-neutral">Rafraîchir</button>
+                </div>
+                <div id="orders-result" class="p-0">
+                    Cliquez sur "Rafraîchir" pour charger les données.
+                </div>
+            </section>
+        </section>
     </main>
 </body>
 </html>
